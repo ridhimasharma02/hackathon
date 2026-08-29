@@ -1,0 +1,362 @@
+CIVIC LENS — BACKEND & ARCHITECTURE NOTES
+==========================================
+Written for: Aditya (Ross Technologies / BaaziGames hackathon project)
+Covers: what changed, how the pieces fit together, the full API, and how
+to run it.
+
+
+0. WHAT CHANGED VS THE ORIGINAL FILE
+-------------------------------------
+The original "index (1).html" was a single 2,000-line file: inline <style>,
+inline <script>, and a hardcoded `tickets` array living only in a browser
+tab's memory. Every login was fake, every "AI verification" was a
+setTimeout, and refreshing the page reset the whole city back to 4 seed
+tickets.
+
+This pass splits it into three things:
+
+  1. A real Express backend (server.js + routes/ + db.js + utils/) that
+     owns every piece of state and every calculation the old inline
+     script used to fake client-side: logins, tickets, votes, zone
+     detection, duplicate detection, priority scoring, notifications.
+
+  2. A plain frontend (public/index.html + public/css/styles.css +
+     public/js/script.js) that renders the UI and talks to that backend
+     over fetch()/FormData. No framework, no build step — open the app,
+     it just works.
+
+  3. Motion (https://motion.dev) wired in for the interactions that
+     benefit most from real spring/easing-driven animation instead of a
+     CSS keyframe: view switching, the nav-tab sliding highlight, ticket
+     list/dashboard entrance, modal open/close, toasts, and hover/press
+     feedback on the buttons that never get re-rendered. See section 6.
+
+Every number the UI shows (priority score, SLA text, zone match, 30m
+duplicate detection) is now computed once, in one place, on the server —
+utils/priority.js and utils/zones.js — instead of being recomputed
+slightly differently in three places in a browser script.
+
+
+1. HOW A REQUEST FLOWS
+------------------------
+  Browser (public/js/script.js)
+      |  fetch() with a JWT in the Authorization header
+      v
+  Express (server.js)
+      |  attachUser -> reads the JWT, sets req.userId (or leaves it unset)
+      v
+  routes/*.routes.js
+      |  requireAuth on anything that needs a signed-in citizen
+      |  reads/writes db.load() state, calls utils/priority.js
+      v
+  db.js
+      |  in-memory object, flushed to data/db.json after every mutation
+      v
+  data/db.json   (the whole "city" as one readable JSON file)
+
+The same Express app also serves public/ as static files, so the
+frontend and the API share one origin (http://localhost:5050) — no CORS
+configuration needed between "the frontend" and "the backend" because,
+from the browser's point of view, there's only one server.
+
+
+2. WHY A JSON FILE INSTEAD OF A REAL DATABASE
+------------------------------------------------
+db.js is a ~130-line module: it keeps `users`, `tickets`, `ticketVotes`,
+`notifications`, and `otps` as plain arrays/objects in memory, and calls
+fs.writeFileSync(data/db.json, ...) after every write. That's it — no
+SQLite/Postgres driver to compile, no server to install, nothing that can
+fail to `npm install` on a laptop that doesn't have build tools. For a
+hackathon demo with a few hundred tickets, that's plenty fast, and you
+can literally open data/db.json in an editor to see the exact state of
+the app.
+
+Every route file calls db.load()/db.persist() — none of them touch the
+filesystem directly — so swapping this for a real database later (the
+company already runs Aurora/DynamoDB on AWS per the existing stack) means
+rewriting db.js only. Nothing in routes/ or utils/ would need to change.
+
+Given your org's PM2-based Node stack, this backend runs cleanly under
+PM2 as-is (`pm2 start server.js --name civic-lens`) if you want to keep
+it alive on a box rather than running `npm start` in a terminal.
+
+
+3. AUTH — WHAT'S REAL AND WHAT'S A DEMO STAND-IN
+---------------------------------------------------
+Mobile OTP:
+  POST /api/auth/otp/request  generates a real 4-digit code, holds it
+  server-side for 5 minutes, and logs it to the server console
+  (`[otp] 9876543210 -> 4821 ...`). There's no SMS gateway wired up (that
+  needs a paid third-party account — Twilio/MSG91/etc. — which is a
+  config/credentials problem, not a code problem) so the response also
+  includes `devOtp` in the JSON *unless* NODE_ENV=production, purely so
+  the demo is self-contained. Wiring a real gateway is a ~20 line change
+  inside routes/auth.routes.js's otp/request handler.
+
+  POST /api/auth/otp/verify checks the code against what's stored,
+  creates the citizen record on first use, and returns a JWT.
+
+Email/password:
+  Real bcrypt-hashed passwords (bcryptjs — pure JS, no native build
+  step). /api/auth/email/login auto-registers on a first-ever login
+  (matching the original mock's single-button UX) but will reject a
+  *wrong* password on an account that already exists.
+
+Google / Guest:
+  POST /api/auth/demo-google always logs into the same fixed demo
+  account — there's no real Google OAuth client wired up (that needs a
+  Google Cloud project + client ID/secret, again a credentials problem).
+  POST /api/auth/guest creates a fresh, unverified "Anonymous Citizen"
+  account, same as the original mock's guest button.
+
+All four flows return { token, user }. The frontend stores the token in
+localStorage and sends it as `Authorization: Bearer <token>` on every
+API call. Tokens are signed with JWT_SECRET (see .env.example) and last
+7 days.
+
+
+4. THE PRIORITY FORMULA (unchanged from the original mock, now
+   authoritative on the server — utils/priority.js)
+-------------------------------------------------------------------
+    score = 15                                   (base)
+          + zone.bonus, if the pin lands inside a critical zone:
+                Hospital/Emergency (<=200m)  -> +45
+                School/College (<=150m)      -> +35
+                Traffic corridor (<=180m)     -> +30
+          + votes * 5                            (community support)
+          + 40, if flagged as an urgent hazard
+          + min(daysOld * 3, 20)                 (aging, capped)
+    score = min(score, 100)
+
+SLA text is derived from that score: >=80 Critical (12-24h), >=50 High
+(48h), >=30 Medium (72h), else Standard (5 days).
+
+Zone matching and the 30-meter duplicate check both use the same
+haversine great-circle distance function (utils/priority.js), so "is
+this near a hospital" and "is this the same pothole someone already
+reported" are computed the same way everywhere.
+
+
+5. THE REPORT FLOW, END TO END
+---------------------------------
+This is the part most worth reading if you're demoing it:
+
+  1. Citizen picks a category + photo (client-side only — no server
+     call yet). GPS is read from the browser (or one of the demo
+     presets in the dropdown) as before.
+
+  2. Clicking "Proceed to AI Verification" calls
+     POST /api/tickets/analyze  { category, lat, lng, urgent }
+     while the checklist animation plays. The server:
+       - finds the nearest critical zone within its radius (if any)
+       - looks for an existing, non-completed ticket of the same
+         category within 30 meters (haversine)
+       - returns { zone, duplicate, distanceMeters, estimatedScore, sla }
+     The "Analyzing proximity to Schools, Colleges, Hospitals..."
+     checklist item shows the real zone match from this response.
+
+  3a. If `duplicate` came back non-null, the 30m proximity modal shows
+      the *actual* existing ticket (its real photo, real vote count).
+      "Same problem" -> POST /api/tickets/:id/support (photo optional)
+      "It got worse"  -> POST /api/tickets/:id/escalate
+      "Different issue" -> just proceeds to step 3 below.
+
+  3b. Otherwise, step 3 (the confirmation screen) shows the real
+      estimatedScore/sla/zone from the analyze response.
+
+  4. Submitting calls
+     POST /api/tickets  (multipart/form-data: category, lat, lng, label,
+     urgent, force=true, photo)
+     `force=true` tells the server to skip re-running the duplicate
+     check, because the citizen already made that decision in step 3a/b
+     — exactly one duplicate check per report, same as the original UX.
+     The server re-computes the zone match itself (never trusts a zone
+     the client claims), stores the photo via multer, and returns the
+     created ticket with its real score.
+
+Every other action — upvote, "simulate municipal resolution", star
+rating — is a single REST call (see section 7) that mutates db.json and
+returns the updated ticket, which the frontend re-renders from.
+
+
+6. WHAT MOTION (motion.dev) ANIMATES, AND WHAT DELIBERATELY STILL USES
+   PLAIN CSS
+----------------------------------------------------------------------
+public/js/script.js imports Motion straight from a CDN as an ES module:
+
+    import { animate, stagger, hover, press }
+      from "https://cdn.jsdelivr.net/npm/motion@13.1.1/+esm"
+
+No build step, no bundler — it's a single <script type="module"
+src="js/script.js"> tag in index.html.
+
+Animated with Motion:
+  - Login card and app-shell entrance on load/sign-in (fade + slide)
+  - Switching between Report / Track / Map / Priority Queue (fade+slide,
+    replacing the old CSS `animation:fadeIn`)
+  - The nav bar's active-tab highlight is a new element
+    (#tabPillIndicator) that Motion slides and resizes to sit under
+    whichever tab is active, instead of every button just getting its
+    own background flipped on/off
+  - Ticket cards (Track view) and dispatch rows (Priority Queue) animate
+    in with a stagger() cascade every time the list re-renders
+  - The three modals (30m duplicate match, star rating, citizen profile)
+    scale+fade in on open and animate back out before the overlay
+    actually hides (closeModal() waits on the animation's `.finished`
+    promise)
+  - Toasts spring in from below and back out, replacing the old CSS
+    transition
+  - The step-rail progress segments animate their fill width
+  - hover()/press() give a handful of *static* buttons (nav tabs, header
+    icon buttons, the login method tabs, category buttons, the main
+    flow buttons, modal action buttons, the assistant launcher) a subtle
+    lift-on-hover / press-down-on-click feel
+
+Deliberately left on plain CSS: the upvote/"mark fixed"/"rate" buttons
+inside ticket cards and dashboard rows. Those elements get torn down and
+rebuilt on every render (renderTickets()/renderDashboard() replace
+container.innerHTML wholesale), and Motion's hover()/press() bind to the
+elements that exist at the moment you call them — they don't
+automatically pick up elements created afterwards. Re-binding gesture
+listeners after every single re-render is exactly the kind of thing
+that quietly leaks event listeners if you get the cleanup order wrong,
+so rather than risk that, those buttons keep the CSS :hover states the
+original file already had (`.upvote-btn:hover{...}` etc.), which look
+and feel fine. If you want them Motion-animated too, the CSS-conflict
+groundwork is already done (see the comments in styles.css) — it's just
+a matter of re-calling hover()/press() with a fresh selector at the end
+of wireTicketCardEvents()/wireDispatchRowEvents() and being deliberate
+about not stacking up duplicate listeners across renders.
+
+GPS radar pulse, notification pulse dot, and the push-banner's own
+slide-down stayed as CSS keyframes/transitions — they were already
+smooth, single-property animations with no JS state to coordinate, so
+converting them would have added risk for no visible improvement.
+
+
+7. FULL API REFERENCE
+------------------------
+All routes are prefixed as shown. Anything marked (auth) requires
+`Authorization: Bearer <token>`. Anything marked (form) is
+multipart/form-data; everything else is JSON.
+
+  GET  /api/zones
+       -> { categories, zones, dupThresholdMeters }
+       Static reference data (the 4 issue categories, the 5 critical
+       zones with their lat/lng/radius/bonus). Used to build the
+       category grid and the map's zone circles.
+
+  POST /api/auth/otp/request        { phone }
+       -> { ok, message, devOtp? }
+  POST /api/auth/otp/verify         { phone, otp, name, address, ward, pincode }
+       -> { token, user }
+  POST /api/auth/email/register     { name, email, password, address, ward, pincode }
+       -> { token, user }
+  POST /api/auth/email/login        { email, password, address? }
+       -> { token, user }
+  POST /api/auth/demo-google        {}
+       -> { token, user }
+  POST /api/auth/guest              {}
+       -> { token, user }
+  GET  /api/auth/me                 (auth)
+       -> { user }
+
+  GET  /api/tickets?search=&sort=priority|votes|newest&cat=&zone=
+       -> { tickets: [...], openCount }
+       Public — no auth required (matches "every civic issue is public"
+       in the UI copy) — but if a token IS sent, each ticket's
+       `userUpvoted` reflects that citizen's own vote.
+  GET  /api/tickets/:id
+       -> { ticket }
+  POST /api/tickets/analyze         (auth)  { category, lat, lng, urgent }
+       -> { zone, duplicate, distanceMeters, estimatedScore, sla }
+  POST /api/tickets                 (auth, form)
+       fields: category, lat, lng, label, urgent, force, photo
+       -> 201 { ticket }   or   409 { error, duplicate }  if a same-
+          category ticket exists within 30m and force!=="true"
+  POST /api/tickets/:id/support     (auth, form: photo optional)
+       -> { ticket }   (+1 vote, attaches the photo to the report stack)
+  POST /api/tickets/:id/escalate    (auth, form: photo optional)
+       -> { ticket }   (+1 vote, urgent=true)
+  POST /api/tickets/:id/upvote      (auth)
+       -> { ticket }   (toggles this citizen's vote)
+  POST /api/tickets/:id/resolve     (auth)
+       -> { ticket }   (status -> Completed, queues a resolution notification)
+  POST /api/tickets/:id/rating      (auth)  { stars, chips, comment }
+       -> { ticket }
+
+  GET  /api/dashboard/stats
+       -> { total, critical, totalVotes, avgSlaHours }
+
+  GET  /api/notifications           (auth)
+       -> { notifications }   (this citizen's device-notification history)
+  POST /api/notifications/read-all  (auth)
+       -> { ok: true }
+
+  GET  /api/health
+       -> { ok: true, uptime }
+
+  GET  /uploads/<filename>
+       Static file serving for uploaded report photos.
+
+
+8. RUNNING IT
+---------------
+    cd civic-lens
+    cp .env.example .env        # then edit JWT_SECRET to something random
+    npm install
+    npm start                   # or: npm run dev  (auto-restarts on save)
+
+Then open http://localhost:5050 — that one URL serves the whole app.
+data/db.json is created and seeded with the same 4 example tickets the
+original mock shipped with, the first time the server boots. Delete
+data/db.json (or run `npm run seed:reset`) to wipe the city back to that
+seed state.
+
+Nothing here needs Docker, a database server, or any external account —
+the only thing worth changing before a real demo is JWT_SECRET in .env.
+
+
+9. FILE MAP
+--------------
+  server.js                    Express app: wires middleware, mounts
+                                every route file, serves public/
+  db.js                        The JSON-file "database" (load/persist)
+  middleware/auth.js            JWT sign/verify, attachUser, requireAuth
+  utils/zones.js                Static categories + critical-zone config
+  utils/priority.js             haversine, zone detection, scoring, SLA text
+  routes/auth.routes.js          OTP / email / demo-google / guest / me
+  routes/tickets.routes.js       list/get/analyze/create/support/escalate/
+                                  upvote/resolve/rating (+ multer upload)
+  routes/notifications.routes.js list + read-all
+  routes/dashboard.routes.js     stats
+  data/db.json                  Generated at runtime — the whole app's state
+  uploads/                      Generated at runtime — uploaded report photos
+  public/index.html             Markup (was inline in the original file)
+  public/css/styles.css         All styling (was the inline <style> block)
+  public/js/script.js           All frontend logic + Motion animations
+                                  (was the inline <script> block)
+
+
+10. KNOWN LIMITATIONS / NATURAL NEXT STEPS
+---------------------------------------------
+  - No real SMS gateway or Google OAuth (see section 3) — both are
+    credentials/config problems, not architecture problems.
+  - Single JSON file storage is fine for a demo; a real deployment
+    would swap db.js for Aurora/DynamoDB (both already in your AWS
+    stack) with no changes needed outside that one file.
+  - No rate limiting on the OTP endpoint — fine for a hackathon judge
+    trying it a few times, not fine for the open internet.
+  - Notifications are per-browser-tab polling (the frontend re-fetches
+    /api/notifications after actions), not push over a WebSocket. For a
+    single-citizen demo (the same person plays "citizen" and "municipal
+    crew") this is unnoticeable; a real multi-user deployment would want
+    Socket.io or SSE so Citizen A sees a notification the instant
+    Citizen B's action (or a real admin's) resolves A's ticket.
+  - Uploaded photos are stored on local disk (uploads/) — fine for one
+    server, would move to S3 (already in your stack) behind a load
+    balancer or multiple app instances.
+  - No automated test suite — everything above was verified by hand
+    with curl against a running instance (auth flows, zone/duplicate
+    detection, photo upload, upvote/resolve/rating, dashboard stats,
+    static file serving) before this was written up.

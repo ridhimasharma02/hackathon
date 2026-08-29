@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Civic Lens — Smart GPS, Citizen Auth &amp; Multi-Factor Priority AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- FLOATING DEVICE PUSH NOTIFICATION BANNER -->
+<div class="device-push-banner" id="devicePushBanner">
+  <div class="push-app-icon" id="pushIcon">📸</div>
+  <div class="push-content" id="pushContent">
+    <div class="push-header">
+      <span class="push-app-title">Civic Lens &middot; Notification</span>
+      <span class="push-time">now</span>
+    </div>
+    <h4 class="push-title" id="pushTitle">Report Under Consideration</h4>
+    <p class="push-body" id="pushBody">Thank you for reporting! We have taken your issue into consideration.</p>
+    <span class="push-action-hint" id="pushHint">Tap to view ticket status</span>
+  </div>
+  <button class="push-close" id="pushCloseBtn" title="Dismiss">✕</button>
+</div>
+
+<!-- NOTIFICATION CENTER DROPDOWN -->
+<div class="notif-dropdown" id="notifDropdown">
+  <div class="notif-head">
+    <span>🔔 Device Notifications</span>
+    <button style="background:none; border:none; color:var(--muted); font-size:12px; cursor:pointer;" id="clearNotifsBtn">Clear All</button>
+  </div>
+  <div class="notif-list" id="notifList">
+    <div style="padding:20px; text-align:center; color:var(--muted); font-size:13px;">No notifications yet</div>
+  </div>
+</div>
+
+<!-- ================= 1. CITIZEN LOGIN & REGISTRATION VIEW ================= -->
+<div class="login-view" id="loginView">
+  <div class="login-theme-toggle"><button class="icon-btn" id="themeToggleLogin">🌙</button></div>
+  <div class="login-shell">
+    <div class="login-visual">
+      <div>
+        <div class="lv-brand"><span class="dot"></span>Civic Lens</div>
+        <div class="lv-tag">See it. Snap it.<br><span>Get it fixed.</span></div>
+      </div>
+      <div class="ticket-stack">
+        <div class="mini-ticket mt1"><span class="mt-pill" style="background:rgba(245,166,35,.25);color:#FFD79B;">Working On It</span><div class="mt-title">Pothole &mdash; MG Road</div><div class="mt-sub">CL-2026-48213 &middot; Ward 14</div></div>
+        <div class="mini-ticket mt2"><span class="mt-pill" style="background:rgba(16,185,129,.25);color:#7EEFC4;">Completed</span><div class="mt-title">Streetlight &mdash; Sector 9</div><div class="mt-sub">CL-2026-30952 &middot; Ward 21</div></div>
+        <div class="mini-ticket mt3"><span class="mt-pill" style="background:rgba(239,68,68,.25);color:#FF97A2;">Critical Hazard</span><div class="mt-title">Sewer Overflow &mdash; Park St</div><div class="mt-sub">CL-2026-11470 &middot; Ward 14</div></div>
+      </div>
+      <div class="lv-stats">
+        <div class="st"><b>12,483</b><small>Issues Reported</small></div>
+        <div class="st"><b>9,206</b><small>Resolved &amp; Rated</small></div>
+        <div class="st"><b>48</b><small>City Wards Live</small></div>
+      </div>
+    </div>
+
+    <div class="login-card">
+      <h1 id="loginHeading">Citizen Login &amp; Onboarding</h1>
+      <p class="lc-sub" id="loginSub">Sign in with Mobile OTP or Gmail to report issues with verified residential geotagging.</p>
+
+      <div class="method-tabs">
+        <button data-method="phone" class="active" id="tabPhone">📱 Mobile &amp; OTP</button>
+        <button data-method="email" id="tabEmail">✉️ Gmail / Email</button>
+      </div>
+
+      <!-- PHONE / OTP METHOD -->
+      <div id="method-phone">
+        <div class="form-group">
+          <label>Mobile Number</label>
+          <div class="phone-row">
+            <span class="prefix">+91</span>
+            <input id="phoneNum" inputmode="numeric" maxlength="10" placeholder="98765 43210" value="9876543210">
+          </div>
+        </div>
+
+        <!-- Additional Citizen Details (Asked during registration / profile setup) -->
+        <div id="signupFields">
+          <div class="form-group">
+            <label>Citizen Full Name</label>
+            <input id="citizenName" placeholder="Aditya Sharma" value="Aditya Sharma">
+          </div>
+          <div class="form-group">
+            <label>Residential Street Address / House No.</label>
+            <input id="citizenAddress" placeholder="Flat 402, Royal Palms, Sector 21" value="B-14, Green Park Extension">
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Municipal Ward / Zone</label>
+              <select id="citizenWard">
+                <option value="Ward 14 (South Zone)">Ward 14 (South Zone)</option>
+                <option value="Ward 21 (Central Hub)">Ward 21 (Central Hub)</option>
+                <option value="Ward 08 (North Zone)">Ward 08 (North Zone)</option>
+                <option value="Ward 35 (Airport Corridor)">Ward 35 (Airport Corridor)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Pincode</label>
+              <input id="citizenPincode" maxlength="6" inputmode="numeric" placeholder="110016" value="110016">
+            </div>
+          </div>
+        </div>
+
+        <p class="err-msg" id="phoneErr">Please enter a valid 10-digit mobile number and address.</p>
+        <button class="btn" id="sendOtpBtn">Send Verification OTP</button>
+
+        <div id="otpBlock" style="display:none; margin-top:14px;">
+          <div class="form-group">
+            <label>Enter 4-Digit Code <span style="font-weight:400; color:var(--signal);">(Demo Code: 1234)</span></label>
+            <input id="otpInput" class="otp-input" inputmode="numeric" maxlength="4" placeholder="••••" value="1234">
+          </div>
+          <p class="err-msg" id="otpErr">Invalid code — please use demo code 1234.</p>
+          <button class="btn success" id="verifyOtpBtn">Verify &amp; Enter Civic Lens</button>
+        </div>
+      </div>
+
+      <!-- GMAIL / EMAIL METHOD -->
+      <div id="method-email" style="display:none;">
+        <div class="form-group">
+          <label>Gmail / Email Address</label>
+          <input id="emailInput" type="email" placeholder="aditya.sharma@gmail.com" value="aditya.citizen@gmail.com">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input id="passInput" type="password" placeholder="••••••••" value="password123">
+        </div>
+        <div class="form-group" id="emailAddressField">
+          <label>Residential Address &amp; Ward</label>
+          <input id="emailCitizenAddress" placeholder="B-14, Green Park Extension, Ward 14" value="B-14, Green Park Extension, Ward 14">
+        </div>
+        <p class="err-msg" id="emailErr">Please enter a valid email and password.</p>
+        <button class="btn" id="emailContinueBtn">Sign in with Gmail</button>
+      </div>
+
+      <div class="divider">or quick connect</div>
+      <button class="btn ghost google-btn" id="googleBtn">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.6 6 29.6 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3.1 0 5.8 1.1 8 3l6-6C34.6 6 29.6 4 24 4c-7.6 0-14.2 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.4C29.6 35.4 26.9 36 24 36c-5.2 0-9.6-3.3-11.2-7.9l-6.6 5C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.5l6.6 5.4C41.9 35.5 44 30.2 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+        1-Click Continue with Google
+      </button>
+      <button class="btn ghost" id="guestBtn" style="margin-top:8px;">Continue as Anonymous Citizen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 2. MAIN APP SHELL (Visible After Auth) ================= -->
+<div id="appShell" style="display:none;">
+
+<header class="top">
+  <div class="brand">
+    <span class="dot"></span>
+    <div>Civic Lens<small>Smart GPS, Citizen Auth &amp; Priority AI</small></div>
+  </div>
+  <nav class="tabs" id="navTabs">
+    <span class="tab-pill-indicator" id="tabPillIndicator"></span>
+    <button data-view="report" class="active"><span>📸</span> Report</button>
+    <button data-view="track"><span>📋</span> Track &amp; Upvote <span class="tab-badge" id="openCountBadge">4</span></button>
+    <button data-view="map"><span>🗺️</span> Live Map</button>
+    <button data-view="dashboard"><span>📊</span> Priority Queue</button>
+  </nav>
+  <div class="header-right">
+    <button class="icon-btn" id="notifBellBtn" title="Device Notifications">
+      🔔<span class="badge-dot" id="notifBadgeDot"></span>
+    </button>
+    <button class="icon-btn" id="themeToggleApp" title="Toggle theme">🌙</button>
+    <div class="user-chip" id="userChipBtn" title="View Citizen Profile &amp; Address">
+      <span class="avatar" id="avatarLetter">A</span>
+      <span class="uname" id="userNameLabel">Aditya Sharma</span>
+      <span class="uward" id="userWardBadge">Ward 14</span>
+      <button class="logout-btn" id="logoutBtn" title="Log Out">⏻</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- REPORT VIEW -->
+  <section class="view active" id="view-report">
+    <p class="eyebrow"><span>📍</span> Mandatory GPS &middot; 30m Proximity AI &middot; Smart Priority</p>
+    <h1 class="page-title">Snap &amp; Report Civic Hazard</h1>
+    <p class="page-sub">Civic Lens enforces live device GPS geotagging. Once submitted, you'll receive real-time device notifications when the problem is accepted and when it gets resolved!</p>
+
+    <!-- LIVE GPS STATUS CARD -->
+    <div class="gps-status-card" id="gpsCard">
+      <div class="gps-left">
+        <div class="gps-radar">📡</div>
+        <div class="gps-info">
+          <h4 id="gpsTitle">Acquiring High-Accuracy GPS…</h4>
+          <p id="gpsSub">Waiting for coordinates and proximity check</p>
+        </div>
+      </div>
+      <div class="gps-actions">
+        <span class="gps-badge" id="gpsBadge">🔒 GPS Locked (&plusmn;4m)</span>
+        <select class="gps-select" id="demoGpsPicker" title="Test with simulated city coordinates">
+          <option value="live">📍 Live Device GPS</option>
+          <option value="hospital">🏥 Near Hospital (Emergency Corridor)</option>
+          <option value="school">🏫 Near DPS High School &amp; College</option>
+          <option value="traffic">🚦 Ring Road Junction (Heavy Traffic)</option>
+          <option value="dup_pothole">🕳️ Duplicate Spot: MG Road Pothole (Within 12m)</option>
+          <option value="dup_sewer">🌊 Duplicate Spot: Park St Sewer (Within 18m)</option>
+        </select>
+        <button class="btn ghost small" id="refreshGpsBtn" style="padding:7px 12px;">🔄 Re-lock GPS</button>
+      </div>
+    </div>
+
+    <div class="step-rail">
+      <div class="seg now" id="seg1"><i></i></div>
+      <div class="seg" id="seg2"><i></i></div>
+      <div class="seg" id="seg3"><i></i></div>
+    </div>
+
+    <div class="report-shell">
+      <div class="card" style="padding:26px;">
+
+        <!-- STEP 1: Details & Photo -->
+        <div id="step-1">
+          <h3 style="margin:0 0 12px;font-size:16px;">1 &middot; Choose Issue Category</h3>
+          <div class="cat-grid" id="catGrid"></div>
+
+          <h3 style="margin:20px 0 10px;font-size:16px;">2 &middot; Snap Photo (Mandatory Live GPS Geotagged)</h3>
+          <div class="dropzone" id="dropzone">
+            <span class="big-ic">📸</span>
+            <b>Tap to Capture or Upload Photo Evidence</b>
+            <div style="font-size:12px; margin-top:4px; color:var(--muted);">Image coordinates will be stamped with live high-accuracy GPS</div>
+          </div>
+          <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none;">
+
+          <div class="toggle-urgent" id="urgentToggle">
+            <div>
+              <b>Flag as Critical Safety Hazard</b>
+              Open manholes, live wires, deep road craters near turns (+40 Priority Score)
+            </div>
+            <div class="switch" id="urgentSwitch"></div>
+          </div>
+
+          <button class="btn" style="margin-top:22px;" id="toStep2" disabled>Proceed to AI Verification &amp; 30m Proximity Scan</button>
+        </div>
+
+        <!-- STEP 2: AI Verification & Proximity Engine -->
+        <div id="step-2" style="display:none;">
+          <h3 style="margin:0 0 16px;font-size:16px;">Running AI Verification &amp; Spatial Analysis</h3>
+          <ul class="verify-list" id="verifyList">
+            <li data-k="gps"><span class="chk"></span> Validating real-time GPS coordinate integrity and device lock</li>
+            <li data-k="ai"><span class="chk"></span> Checking image authenticity (manipulation &amp; AI-synth filter)</li>
+            <li data-k="blur"><span class="chk"></span> Optical clarity, resolution &amp; lighting check</li>
+            <li data-k="dup"><span class="chk"></span> Scanning 30-meter radius for existing community tickets</li>
+            <li data-k="priority"><span class="chk"></span> Analyzing proximity to Schools, Colleges, Hospitals &amp; Traffic Corridors</li>
+          </ul>
+        </div>
+
+        <!-- STEP 3: Final Confirmation -->
+        <div id="step-3" style="display:none;">
+          <h3 style="margin:0 0 14px;font-size:16px;">3 &middot; Review Submission &amp; Priority Score</h3>
+          <div style="background:var(--bg); border-radius:12px; padding:16px; margin-bottom:18px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13.5px;"><span style="color:var(--muted);">Reporter:</span><b id="confUser">Aditya Sharma (Ward 14)</b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13.5px;"><span style="color:var(--muted);">Category:</span><b id="confCat">—</b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13.5px;"><span style="color:var(--muted);">Exact Geotag:</span><b id="confLoc">—</b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13.5px;"><span style="color:var(--muted);">Detected Critical Zone:</span><b id="confZone">None (Residential)</b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13.5px;"><span style="color:var(--muted);">Initial Priority Score:</span><b id="confScore" style="color:var(--signal); font-size:16px;">—</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:13.5px;"><span style="color:var(--muted);">Estimated Resolution SLA:</span><b id="confSla" style="color:var(--verified);">48 Hours</b></div>
+          </div>
+          <button class="btn success" id="submitReport">Submit Verified Ticket &amp; Subscribe to Device Alerts</button>
+          <button class="btn ghost" style="margin-top:10px;" id="backToStart">Cancel &amp; Retake</button>
+        </div>
+
+      </div>
+
+      <!-- Priority Logic Breakdown Card -->
+      <div class="card side-note">
+        <h3>Verified Citizen Reporting</h3>
+        <ul>
+          <li><b>Logged In Citizen:</b> Connected to your registered address for municipal updates.</li>
+          <li><b>Mandatory GPS Verification:</b> Prevents fake reports from remote locations.</li>
+          <li><b>30m Proximity AI Stacking:</b> Avoids duplicate spam tickets by combining community reports into a single high-impact problem.</li>
+        </ul>
+        <div class="priority-formula-box">
+          <h5>Priority Weightage Formula</h5>
+          <div class="formula-item"><span>🏥 Hospital / Emergency Zone (&le;200m)</span><b>+45 pts</b></div>
+          <div class="formula-item"><span>🏫 School / College Campus (&le;150m)</span><b>+35 pts</b></div>
+          <div class="formula-item"><span>🚦 High-Traffic Corridor / Metro Junction</span><b>+30 pts</b></div>
+          <div class="formula-item"><span>🧍 Community Upvote / Photo Merge</span><b>+5 pts each</b></div>
+          <div class="formula-item"><span>⚠️ Immediate Hazard Flag</span><b>+40 pts</b></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRACK & UPVOTE VIEW -->
+  <section class="view" id="view-track">
+    <p class="eyebrow"><span>📋</span> Public Transparency Queue</p>
+    <h1 class="page-title">Track Issues &amp; Upvote Solutions</h1>
+    <p class="page-sub">Every civic issue is public. See real-time priority scores, citizen upvotes, combined photo galleries, and test status resolutions to trigger citizen feedback notifications.</p>
+
+    <div class="track-toolbar">
+      <input class="search-in" id="trackSearch" placeholder="Search by Ticket ID, street, or landmark…">
+      <select class="filt" id="trackSort">
+        <option value="priority">🔥 Sort: Highest Priority Score</option>
+        <option value="votes">👍 Sort: Most Community Upvotes</option>
+        <option value="newest">🕒 Sort: Newest First</option>
+      </select>
+      <select class="filt" id="trackFilterCat">
+        <option value="">All Categories</option>
+        <option value="Pothole">Pothole</option>
+        <option value="Streetlight">Streetlight</option>
+        <option value="Sewer">Sewer</option>
+        <option value="Traffic">Traffic Signal / Hazard</option>
+      </select>
+      <select class="filt" id="trackFilterZone">
+        <option value="">All Zones</option>
+        <option value="Hospital">🏥 Hospital Zones</option>
+        <option value="School">🏫 School / College Zones</option>
+        <option value="Traffic">🚦 High Traffic Zones</option>
+      </select>
+    </div>
+
+    <div class="ticket-list" id="ticketList"></div>
+  </section>
+
+  <!-- LIVE MAP VIEW -->
+  <section class="view" id="view-map">
+    <p class="eyebrow"><span>🗺️</span> Spatial Proximity &middot; 30m Clustering</p>
+    <h1 class="page-title">Live Civic Map &amp; Critical Infrastructure</h1>
+    <p class="page-sub">Visualizing reported issues along with monitored high-priority zones (Schools, Hospitals, Major Traffic Corridors). Click anywhere to simulate GPS inspection.</p>
+
+    <div id="mapview"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; flex-wrap:wrap; gap:10px;">
+      <button class="btn ghost small" id="locateMeBtn">📍 Center on My Live GPS</button>
+      <div style="display:flex; gap:16px; font-size:12.5px; color:var(--muted); flex-wrap:wrap;">
+        <span style="display:flex; align-items:center; gap:6px;"><i style="width:10px; height:10px; border-radius:50%; background:var(--critical); display:inline-block;"></i>Critical Priority (&ge;80)</span>
+        <span style="display:flex; align-items:center; gap:6px;"><i style="width:10px; height:10px; border-radius:50%; background:var(--traffic-amber); display:inline-block;"></i>High Priority</span>
+        <span style="display:flex; align-items:center; gap:6px;"><i style="width:10px; height:10px; border-radius:50%; background:var(--school-purple); display:inline-block;"></i>School Zone</span>
+        <span style="display:flex; align-items:center; gap:6px;"><i style="width:10px; height:10px; border-radius:50%; background:var(--hospital-rose); display:inline-block;"></i>Hospital Zone</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRIORITY QUEUE / DASHBOARD -->
+  <section class="view" id="view-dashboard">
+    <p class="eyebrow"><span>📊</span> Municipal Action Dispatch</p>
+    <h1 class="page-title">Dynamic City Priority Queue</h1>
+    <p class="page-sub">Calculated live using proximity weightage, citizen upvote count, hazard flags, and aging parameters.</p>
+
+    <div class="stat-grid">
+      <div class="card stat"><div class="num" id="statTotal">0</div><div class="lbl">Total Active Issues</div></div>
+      <div class="card stat"><div class="num" id="statCritical" style="color:var(--critical);">0</div><div class="lbl">Critical / Emergency</div></div>
+      <div class="card stat"><div class="num" id="statVotes" style="color:var(--signal);">0</div><div class="lbl">Citizen Upvotes Cast</div></div>
+      <div class="card stat"><div class="num" id="statAvgSla" style="color:var(--verified);">28h</div><div class="lbl">Avg Response SLA</div></div>
+    </div>
+
+    <div class="card" style="padding:22px; margin-bottom:20px;">
+      <h3 style="margin:0 0 16px; font-size:17px;">Municipal Dispatch Work Order (Ranked by Score)</h3>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:13.5px; text-align:left;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--line); color:var(--muted); font-size:11.5px; text-transform:uppercase;">
+              <th style="padding:10px;">Queue Rank</th>
+              <th style="padding:10px;">Issue &amp; Location</th>
+              <th style="padding:10px;">Critical Zone</th>
+              <th style="padding:10px;">Upvotes</th>
+              <th style="padding:10px;">Priority Score</th>
+              <th style="padding:10px;">Resolution SLA</th>
+              <th style="padding:10px;">Municipal Action</th>
+            </tr>
+          </thead>
+          <tbody id="dispatchTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<!-- 30-METER DUPLICATE & PROXIMITY MODAL -->
+<div class="overlay" id="dupOverlay">
+  <div class="modal">
+    <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,90,54,.12); color:var(--signal); font-weight:800; font-size:11px; text-transform:uppercase; padding:4px 10px; border-radius:999px; margin-bottom:12px;">
+      📍 30-Meter Proximity Match Found
+    </div>
+    <h3>An Active Problem Already Exists Here</h3>
+    <p id="dupProximitySub">Civic Lens detected this same issue reported within 30 meters of your live GPS spot. Let's combine power instead of creating a duplicate ticket!</p>
+
+    <div class="dup-compare-box">
+      <div class="dup-grid">
+        <div class="dup-thumb-card">
+          <span>Existing Master Report</span>
+          <div class="dup-thumb-img" id="dupOriginalThumb">🕳️</div>
+        </div>
+        <div class="dup-thumb-card">
+          <span>Your Newly Snapped Photo</span>
+          <div class="dup-thumb-img" id="dupUserThumb">📸</div>
+        </div>
+      </div>
+      <div class="dup-meta-bar">
+        <span id="dupMetaDistance">📏 Distance: 14 meters away</span>
+        <span id="dupMetaVotes">🧍 18 Citizens Supported</span>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <button class="btn success" id="dupSupportBtn">
+        👍 Same Problem &mdash; Upvote (+1) &amp; Add My Photo
+      </button>
+      <button class="btn critical" id="dupEscalateBtn">
+        ⚡ It Got Worse &mdash; Escalate to Urgent (+40 Priority)
+      </button>
+      <button class="btn ghost" id="dupSeparateBtn">
+        🆕 No, This is a Completely Different Issue
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- CITIZEN RATING & FEEDBACK MODAL -->
+<div class="overlay" id="ratingOverlay">
+  <div class="modal" style="max-width:480px; text-align:center;">
+    <div style="width:58px; height:58px; border-radius:50%; background:rgba(16,185,129,.15); color:var(--verified); font-size:28px; display:inline-flex; align-items:center; justify-content:center; margin-bottom:14px;">
+      🎉
+    </div>
+    <h3 id="ratingModalTitle">Issue Successfully Resolved!</h3>
+    <p id="ratingModalSub">Municipal maintenance team has completed the repair work for your reported problem. Please rate the repair quality and service speed!</p>
+
+    <div style="background:var(--bg); border-radius:12px; padding:12px; margin-bottom:14px; text-align:left; font-size:13px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span style="color:var(--muted);">Ticket:</span><b id="ratingTicketId" class="mono">—</b></div>
+      <div style="display:flex; justify-content:space-between;"><span style="color:var(--muted);">Location:</span><b id="ratingTicketLoc">—</b></div>
+    </div>
+
+    <div class="stars-row" id="starsRow">
+      <button class="star-btn" data-star="1">★</button>
+      <button class="star-btn" data-star="2">★</button>
+      <button class="star-btn" data-star="3">★</button>
+      <button class="star-btn" data-star="4">★</button>
+      <button class="star-btn" data-star="5">★</button>
+    </div>
+
+    <div class="quick-chips" id="quickChips">
+      <div class="q-chip" data-chip="Lightning Fast ⚡">Lightning Fast ⚡</div>
+      <div class="q-chip" data-chip="Clean Repair 🧹">Clean Repair 🧹</div>
+      <div class="q-chip" data-chip="Durable Asphalt 🛣️">Durable Asphalt 🛣️</div>
+      <div class="q-chip" data-chip="Great Updates 📱">Great Updates 📱</div>
+    </div>
+
+    <textarea id="ratingComment" placeholder="Optional comments for the municipal team…" style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:10px 12px; font-family:'Inter'; font-size:13px; background:var(--surface); color:var(--ink); height:70px; margin-bottom:16px; resize:none;"></textarea>
+
+    <button class="btn success" id="submitRatingBtn">Submit Rating &amp; Finish</button>
+  </div>
+</div>
+
+<!-- CITIZEN PROFILE MODAL -->
+<div class="overlay" id="profileOverlay">
+  <div class="modal" style="max-width:500px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3>Citizen Profile &amp; Residential Geotag</h3>
+      <button style="background:none; border:none; font-size:18px; color:var(--muted); cursor:pointer;" id="profileCloseBtn">✕</button>
+    </div>
+    <div style="background:var(--bg); border-radius:14px; padding:16px; margin-bottom:16px; font-size:13.5px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--muted);">Citizen Name:</span><b id="profName">—</b></div>
+      <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--muted);">Contact:</span><b id="profContact">—</b></div>
+      <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--muted);">Registered Address:</span><b id="profAddress" style="text-align:right; max-width:260px;">—</b></div>
+      <div style="display:flex; justify-content:space-between;"><span style="color:var(--muted);">Municipal Ward:</span><b id="profWard" style="color:var(--signal);">—</b></div>
+    </div>
+    <button class="btn ghost" id="profileLogoutBtn" style="color:var(--critical); border-color:rgba(239,68,68,.3);">⏻ Sign Out / Switch Account</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- AI GUIDE GIRAFFE -->
+<div class="assistant-launcher" id="assistantLauncher" title="AI Guide &mdash; Giraffe">🦒</div>
+<div class="assistant-panel" id="assistantPanel" style="display:none;">
+  <div class="ap-header">
+    <span style="font-size:22px;">🦒</span>
+    <div style="flex:1;">
+      <b style="font-size:13.5px; display:block;">Giraffe Guide</b>
+      <small style="color:var(--muted); font-size:11px;">Citizen Auth &amp; Smart Priority AI</small>
+    </div>
+    <button style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:15px;" id="apClose">✕</button>
+  </div>
+  <div class="ap-messages" id="apMessages"></div>
+  <div class="ap-input-row">
+    <input type="text" id="apInput" placeholder="Ask about login, address, notifications or priority…">
+    <button class="ap-send" id="apSend">➤</button>
+  </div>
+</div>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script type="module" src="js/script.js"></script>
+</body>
+</html>
